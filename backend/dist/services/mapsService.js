@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = __importDefault(require("axios"));
 class MapsService {
     constructor() {
-        this.apiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+        this.apiKey = process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyAO_KNmgR67DqAeV0XnYhKSU2CHXu7YsbQ';
         this.baseUrl = 'https://maps.googleapis.com/maps/api';
         if (!this.apiKey) {
             throw new Error('Google Maps API key is required');
@@ -40,7 +40,7 @@ class MapsService {
                 params: {
                     origin: `${origin.lat},${origin.lng}`,
                     destination: `${destination.lat},${destination.lng}`,
-                    waypoints: waypoints?.map(wp => `${wp.lat},${wp.lng}`).join('|'),
+                    waypoints: waypoints === null || waypoints === void 0 ? void 0 : waypoints.map(wp => `${wp.lat},${wp.lng}`).join('|'),
                     key: this.apiKey
                 }
             });

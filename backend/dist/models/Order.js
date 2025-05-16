@@ -35,41 +35,25 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const OrderSchema = new mongoose_1.Schema({
-    user: {
-        type: String,
-        required: true
-    },
+    user: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true },
+    restaurant: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Restaurant', required: true },
     items: [{
-            foodItem: {
-                type: mongoose_1.Schema.Types.ObjectId,
-                ref: 'FoodItem',
-                required: true
-            },
-            quantity: {
-                type: Number,
-                required: true,
-                min: 1
-            },
-            price: {
-                type: Number,
-                required: true,
-                min: 0
-            }
+            menuItem: { type: mongoose_1.Schema.Types.ObjectId, ref: 'MenuItem', required: true },
+            quantity: { type: Number, required: true },
+            price: { type: Number, required: true }
         }],
-    totalAmount: {
-        type: Number,
-        required: true,
-        min: 0
-    },
+    totalAmount: { type: Number, required: true },
     status: {
         type: String,
-        required: true,
-        enum: ['pending', 'preparing', 'ready', 'delivered', 'cancelled'],
+        enum: ['pending', 'preparing', 'out_for_delivery', 'delivered', 'completed', 'cancelled'],
         default: 'pending'
     },
-    deliveryAddress: {
+    deliveryAddress: { type: String, required: true },
+    paymentMethod: { type: String, required: true },
+    paymentStatus: {
         type: String,
-        required: true
+        enum: ['pending', 'paid', 'failed'],
+        default: 'pending'
     },
     tracking: {
         orderId: { type: String },

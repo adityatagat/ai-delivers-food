@@ -7,8 +7,9 @@ exports.adminAuth = exports.auth = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = __importDefault(require("../models/User"));
 const auth = async (req, res, next) => {
+    var _a;
     try {
-        const token = req.header('Authorization')?.replace('Bearer ', '');
+        const token = (_a = req.header('Authorization')) === null || _a === void 0 ? void 0 : _a.replace('Bearer ', '');
         if (!token) {
             res.status(401).json({ message: 'Authentication required' });
             return;

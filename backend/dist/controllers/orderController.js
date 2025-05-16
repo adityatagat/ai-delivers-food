@@ -126,6 +126,7 @@ const updateOrderStatus = async (req, res) => {
 };
 exports.updateOrderStatus = updateOrderStatus;
 const getOrderStats = async (req, res) => {
+    var _a;
     try {
         const userId = req.user._id;
         const isAdmin = req.user.role === 'admin';
@@ -153,7 +154,7 @@ const getOrderStats = async (req, res) => {
         res.json({
             stats,
             totalOrders,
-            totalAmount: totalAmount[0]?.total || 0
+            totalAmount: ((_a = totalAmount[0]) === null || _a === void 0 ? void 0 : _a.total) || 0
         });
     }
     catch (error) {

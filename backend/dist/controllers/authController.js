@@ -30,8 +30,9 @@ const register = async (req, res) => {
         // Generate verification token
         user.generateVerificationToken();
         await user.save();
-        // Send verification email
-        await (0, emailService_1.sendVerificationEmail)(user.email, user.verificationToken);
+        // Send verification email - don't await to prevent registration failure if email fails
+        (0, emailService_1.sendVerificationEmail)(user.email, user.verificationToken)
+            .catch(err => console.error('Email verification error (non-blocking):', err));
         // Generate token
         const token = generateToken(user._id);
         res.status(201).json({
@@ -46,6 +47,7 @@ const register = async (req, res) => {
         });
     }
     catch (error) {
+        console.error('Registration error:', error);
         res.status(400).json({ message: 'Error registering user', error });
     }
 };
