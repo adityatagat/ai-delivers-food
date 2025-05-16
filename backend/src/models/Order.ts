@@ -2,63 +2,46 @@ import mongoose, { Schema, Document } from 'mongoose';
 import { IFoodItem } from './FoodItem';
 import { ILocation, ITrackingInfo } from '../interfaces/tracking';
 
-export interface IOrderItem {
-  foodItem: IFoodItem['_id'];
+interface OrderItem {
+  menuItem: mongoose.Types.ObjectId;
   quantity: number;
   price: number;
 }
 
 export interface IOrder extends Document {
-  user: string;
-  items: Array<{
-    foodItem: mongoose.Types.ObjectId;
-    quantity: number;
-    price: number;
-  }>;
+  user: mongoose.Types.ObjectId;
+  restaurant: mongoose.Types.ObjectId;
+  items: OrderItem[];
   totalAmount: number;
-  status: 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled';
+  status: 'pending' | 'preparing' | 'out_for_delivery' | 'delivered' | 'completed' | 'cancelled';
   deliveryAddress: string;
+  paymentMethod: string;
+  paymentStatus: 'pending' | 'paid' | 'failed';
   tracking?: ITrackingInfo;
   createdAt: Date;
   updatedAt: Date;
 }
 
 const OrderSchema: Schema = new Schema({
-  user: { 
-    type: String, 
-    required: true 
-  },
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  restaurant: { type: Schema.Types.ObjectId, ref: 'Restaurant', required: true },
   items: [{
-    foodItem: { 
-      type: Schema.Types.ObjectId, 
-      ref: 'FoodItem', 
-      required: true 
-    },
-    quantity: { 
-      type: Number, 
-      required: true,
-      min: 1 
-    },
-    price: { 
-      type: Number, 
-      required: true,
-      min: 0 
-    }
+    menuItem: { type: Schema.Types.ObjectId, ref: 'MenuItem', required: true },
+    quantity: { type: Number, required: true },
+    price: { type: Number, required: true }
   }],
-  totalAmount: { 
-    type: Number, 
-    required: true,
-    min: 0 
-  },
+  totalAmount: { type: Number, required: true },
   status: { 
     type: String, 
-    required: true,
-    enum: ['pending', 'preparing', 'ready', 'delivered', 'cancelled'],
+    enum: ['pending', 'preparing', 'out_for_delivery', 'delivered', 'completed', 'cancelled'],
     default: 'pending'
   },
-  deliveryAddress: { 
+  deliveryAddress: { type: String, required: true },
+  paymentMethod: { type: String, required: true },
+  paymentStatus: { 
     type: String, 
-    required: true 
+    enum: ['pending', 'paid', 'failed'],
+    default: 'pending'
   },
   tracking: {
     orderId: { type: String },
