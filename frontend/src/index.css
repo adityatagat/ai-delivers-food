@@ -5,6 +5,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background-color);
+  color: var(--text-color);
 }
 
 code {
@@ -20,4 +22,16 @@ code {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* Define light theme colors */
+:root {
+  --background-color: white;
+  --text-color: black;
+}
+
+/* Define dark theme colors */
+[data-theme='dark'] {
+  --background-color: black;
+  --text-color: white;
 } 

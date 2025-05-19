@@ -9,11 +9,13 @@ import Menu from './pages/Menu';
 import Cart from './pages/Cart';
 import Orders from './pages/Orders';
 import OrderTracking from './pages/OrderTracking';
+import ThemeToggle from './components/ThemeToggle';
 
 function App() {
   return (
     <>
       <Navbar />
+      <ThemeToggle />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
