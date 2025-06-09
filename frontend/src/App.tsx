@@ -1,5 +1,6 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
+import { CssBaseline } from '@mui/material';
 import Navbar from './components/Navbar';
 import PrivateRoute from './components/PrivateRoute';
 import Home from './pages/Home';
@@ -9,9 +10,9 @@ import Menu from './pages/Menu';
 import Cart from './pages/Cart';
 import Orders from './pages/Orders';
 import OrderTracking from './pages/OrderTracking';
-import ThemeToggle from './components/ThemeToggle';
+import ThemeToggle, { ColorModeProvider } from './components/ThemeToggle';
 
-function App() {
+function AppContent() {
   return (
     <>
       <Navbar />
@@ -47,6 +48,15 @@ function App() {
         />
       </Routes>
     </>
+  );
+}
+
+function App() {
+  return (
+    <ColorModeProvider>
+      <CssBaseline />
+      <AppContent />
+    </ColorModeProvider>
   );
 }
 
