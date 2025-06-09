@@ -180,6 +180,28 @@ jobs:
         env:
           MONGO_INITDB_ROOT_USERNAME: test
           MONGO_INITDB_ROOT_PASSWORD: test
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install Dependencies
+      run: |
+        cd backend
+        npm ci
+    
+    - name: Run Tests
+      run: |
+        cd backend
+        npm test
+      env:
+        NODE_ENV: test
+        MONGODB_URI: mongodb://test:test@localhost:27017/test?authSource=admin
 
   test-frontend:
     name: Frontend Tests
