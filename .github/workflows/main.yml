@@ -9,7 +9,126 @@ on:
     - cron: '0 0 * * 0'  # Run weekly on Sunday
 
 jobs:
+  backend-code-quality:
+    name: Backend Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install Dependencies
+      run: |
+        cd backend
+        npm ci
+    
+    - name: Run ESLint
+      run: |
+        cd backend
+        npm run lint
+    
+    - name: Run TypeScript Check
+      run: |
+        cd backend
+        npm run type-check
+
+  frontend-code-quality:
+    name: Frontend Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install Dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Run ESLint
+      run: |
+        cd frontend
+        npm run lint
+    
+    - name: Run TypeScript Check
+      run: |
+        cd frontend
+        npm run type-check
+
+  backend-security:
+    name: Backend Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install Dependencies
+      run: |
+        cd backend
+        npm ci --production
+    
+    - name: Run npm audit
+      run: |
+        cd backend
+        npm audit --production
+    
+    - name: Run Snyk Security Scan
+      run: |
+        cd backend
+        npx snyk test --severity-threshold=high
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      continue-on-error: true
+
+  frontend-security:
+    name: Frontend Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install Dependencies
+      run: |
+        cd frontend
+        npm ci --production
+    
+    - name: Run npm audit
+      run: |
+        cd frontend
+        npm audit --production
+    
+    - name: Run Snyk Security Scan
+      run: |
+        cd frontend
+        npx snyk test --severity-threshold=high
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      continue-on-error: true
+
   dependency-updates:
+    name: Dependency Updates
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     
@@ -22,18 +141,7 @@ jobs:
         node-version: '18'
         cache: 'npm'
     
-    - name: Install Backend Dependencies
-      run: |
-        cd backend
-        npm ci
-    
-    - name: Check Backend Dependencies
-      run: |
-        cd backend
-        npm outdated
-        npm audit
-    
-    - name: Create Backend Dependency Update PR
+    - name: Update Backend Dependencies
       uses: peter-evans/create-pull-request@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -46,18 +154,7 @@ jobs:
           - Run `npm audit` to check for security issues
         branch: update-backend-deps
     
-    - name: Install Frontend Dependencies
-      run: |
-        cd frontend
-        npm ci
-    
-    - name: Check Frontend Dependencies
-      run: |
-        cd frontend
-        npm outdated
-        npm audit
-    
-    - name: Create Frontend Dependency Update PR
+    - name: Update Frontend Dependencies
       uses: peter-evans/create-pull-request@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -70,98 +167,9 @@ jobs:
           - Run `npm audit` to check for security issues
         branch: update-frontend-deps
 
-  code-quality:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-        cache: 'npm'
-    
-    - name: Install Backend Dependencies
-      run: |
-        cd backend
-        npm ci
-    
-    - name: Run ESLint Backend
-      run: |
-        cd backend
-        npm run lint
-    
-    - name: Run TypeScript Check Backend
-      run: |
-        cd backend
-        npm run type-check
-    
-    - name: Install Frontend Dependencies
-      run: |
-        cd frontend
-        npm ci
-    
-    - name: Run ESLint Frontend
-      run: |
-        cd frontend
-        npm run lint
-    
-    - name: Run TypeScript Check Frontend
-      run: |
-        cd frontend
-        npm run type-check
-
-  security-scan:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-        cache: 'npm'
-    
-    - name: Install Backend Dependencies
-      run: |
-        cd backend
-        npm ci
-    
-    - name: Run npm audit Backend
-      run: |
-        cd backend
-        npm audit --production
-    
-    - name: Run Snyk Security Scan Backend
-      uses: snyk/actions/node@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        args: --severity-threshold=high
-      continue-on-error: true
-    
-    - name: Install Frontend Dependencies
-      run: |
-        cd frontend
-        npm ci
-    
-    - name: Run npm audit Frontend
-      run: |
-        cd frontend
-        npm audit --production
-    
-    - name: Run Snyk Security Scan Frontend
-      uses: snyk/actions/node@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        args: --severity-threshold=high
-      continue-on-error: true
-
-  test:
-    needs: [code-quality, security-scan]
+  test-backend:
+    name: Backend Tests
+    needs: [backend-code-quality, backend-security]
     runs-on: ubuntu-latest
     
     services:
@@ -172,6 +180,11 @@ jobs:
         env:
           MONGO_INITDB_ROOT_USERNAME: test
           MONGO_INITDB_ROOT_PASSWORD: test
+
+  test-frontend:
+    name: Frontend Tests
+    needs: [frontend-code-quality, frontend-security]
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
@@ -225,8 +238,14 @@ jobs:
         name: frontend-coverage
         fail_ci_if_error: true
 
-  build:
-    needs: test
+  build-backend:
+    name: Backend Build
+    needs: test-backend
+    runs-on: ubuntu-latest
+
+  build-frontend:
+    name: Frontend Build
+    needs: test-frontend
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     
@@ -256,19 +275,69 @@ jobs:
         push: true
         tags: yourusername/ai-delivers-food-frontend:latest
 
-  deploy:
-    needs: build
+  deploy-backend:
+    name: Backend Deploy
+    needs: build-backend
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     
     steps:
-    - name: Deploy to Production
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install Dependencies
+      run: |
+        cd backend
+        npm ci
+    
+    - name: Deploy Backend
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USERNAME }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-          cd /path/to/app
-          docker-compose -f docker-compose.prod.yml pull
-          docker-compose -f docker-compose.prod.yml up -d 
+          cd /path/to/app/backend
+          docker-compose -f docker-compose.prod.yml pull backend
+          docker-compose -f docker-compose.prod.yml up -d --no-deps backend
+
+  deploy-frontend:
+    name: Frontend Deploy
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install Dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Build Frontend
+      run: |
+        cd frontend
+        npm run build
+    
+    - name: Deploy Frontend
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+          cd /path/to/app/frontend
+          docker-compose -f docker-compose.prod.yml pull frontend
+          docker-compose -f docker-compose.prod.yml up -d --no-deps frontend
