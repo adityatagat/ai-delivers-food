@@ -1,104 +1,495 @@
-# Production Deployment Guide
+# 🚀 Production Deployment Guide
 
-This guide outlines the steps to deploy AI Delivers Food! to a production environment.
+This guide provides comprehensive instructions for deploying AI Delivers Food to production environments, including Docker, cloud platforms, and monitoring setup.
 
-## Prerequisites
+## 📋 Prerequisites
 
-- Docker and Docker Compose installed on the production server
-- Domain name and SSL certificate
-- MongoDB Atlas account (recommended for production database)
-- Google Maps API key with billing enabled
-- A server with at least:
-  - 2 CPU cores
-  - 4GB RAM
-  - 20GB storage
-  - Ubuntu 20.04 LTS or later
+### Infrastructure Requirements
+- **Server**:
+  - 2+ vCPUs
+  - 4GB+ RAM
+  - 20GB+ storage
+  - Ubuntu 22.04 LTS or later
 
-## Production Configuration
+### Accounts & Services
+- Domain name with DNS access
+- SSL certificate (Let's Encrypt recommended)
+- MongoDB Atlas account (for production database)
+- Google Cloud Platform account with:
+  - Google Maps JavaScript API enabled
+  - Geocoding API enabled
+  - Billing enabled
+
+### Tools
+- Docker 20.10+ and Docker Compose 2.0+
+- Node.js 18+ and npm 9+
+- Git
+- Nginx (for production reverse proxy)
+
+## 🛠 Production Configuration
 
 ### 1. Environment Variables
 
-Create a `.env` file in the root directory with production values:
+Create a `.env` file in the project root with these production values:
 
 ```env
-# MongoDB Configuration
-MONGODB_USERNAME=your_production_username
-MONGODB_PASSWORD=your_strong_password
-MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/ai_delivers_food
-
-# JWT Configuration
-JWT_SECRET=your_very_long_random_secret
-JWT_EXPIRES_IN=24h
-
-# Google Maps
-GOOGLE_MAPS_API_KEY=your_production_api_key
-RESTAURANT_ADDRESS=your_restaurant_address
-
-# Application
+# ========== Application ==========
 NODE_ENV=production
 PORT=5000
-CLIENT_URL=https://your-domain.com
+CLIENT_URL=https://yourdomain.com
 
-# SSL Configuration (if using Let's Encrypt)
-SSL_EMAIL=your-email@domain.com
-DOMAIN=your-domain.com
+# ========== Database ==========
+# MongoDB Atlas (recommended for production)
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/ai_delivers_food?retryWrites=true&w=majority
+
+# Local MongoDB (for development only)
+# MONGODB_URI=mongodb://mongodb:27017/ai_delivers_food
+
+# ========== Authentication ==========
+JWT_SECRET=generate_a_secure_random_string_min_32_chars
+JWT_EXPIRES_IN=24h
+JWT_COOKIE_EXPIRES_IN=90
+
+# ========== Google Maps ==========
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+RESTAURANT_ADDRESS="123 Main St, City, Country"
+
+# ========== Frontend ==========
+REACT_APP_API_URL=https://api.yourdomain.com
+REACT_APP_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+
+# ========== Rate Limiting ==========
+RATE_LIMIT_WINDOW_MS=15*60*1000  # 15 minutes
+RATE_LIMIT_MAX=100  # Limit each IP to 100 requests per windowMs
+
+# ========== Security ==========
+CORS_ORIGIN=https://yourdomain.com
+HELMET_ENABLED=true
+HSTS_ENABLED=true
+CONTENT_SECURITY_POLICY_ENABLED=true
+
+# ========== Logging ==========
+LOG_LEVEL=info
+LOG_FORMAT=combined
+
+# ========== SSL/TLS ==========
+# For Let's Encrypt certificates
+SSL_EMAIL=admin@yourdomain.com
+DOMAIN=yourdomain.com
 ```
 
-### 2. SSL Configuration
+### Security Best Practices
 
-1. Install Certbot:
-```bash
-sudo apt-get update
-sudo apt-get install certbot python3-certbot-nginx
-```
+1. **Secrets Management**:
+   - Never commit `.env` files to version control
+   - Use environment variables or secrets management services
+   - Rotate secrets regularly
 
-2. Obtain SSL certificate:
-```bash
-sudo certbot --nginx -d your-domain.com
-```
+2. **Database Security**:
+   - Use strong, unique passwords
+   - Enable network encryption (TLS/SSL)
+   - Restrict network access to database
+   - Regular backups
 
-3. Update nginx.conf to use SSL:
+3. **API Security**:
+   - Enable CORS only for trusted domains
+   - Implement rate limiting
+   - Use HTTPS everywhere
+   - Set secure HTTP headers
+
+4. **Docker Security**:
+   - Use non-root users in containers
+   - Keep images updated
+   - Scan images for vulnerabilities
+   - Limit container capabilities
+
+### 2. SSL/TLS Configuration
+
+#### Option 1: Automated SSL with Let's Encrypt (Recommended)
+
+1. **Install Certbot and Nginx plugin**:
+   ```bash
+   sudo apt update
+   sudo apt install -y certbot python3-certbot-nginx
+   ```
+
+2. **Obtain SSL Certificate**:
+   ```bash
+   sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com \
+     --email admin@yourdomain.com \
+     --agree-tos \
+     --no-eff-email \
+     --redirect \
+     --hsts \
+     --staple-ocsp
+   ```
+
+3. **Set up Auto-Renewal**:
+   ```bash
+   # Test the renewal process
+   sudo certbot renew --dry-run
+   
+   # Add a cron job for automatic renewal
+   (crontab -l 2>/dev/null; echo "0 0,12 * * * root python -c 'import random; import time; time.sleep(random.random() * 3600)' && certbot renew -q") | sudo crontab -
+   ```
+
+#### Option 2: Manual SSL Certificate Installation
+
+1. **Create SSL Directory**:
+   ```bash
+   sudo mkdir -p /etc/nginx/ssl/yourdomain.com
+   ```
+
+2. **Upload Your Certificates**:
+   - Upload your SSL certificate and private key to the server
+   - Place them in the `/etc/nginx/ssl/yourdomain.com/` directory
+   - Ensure proper permissions:
+     ```bash
+     sudo chmod 600 /etc/nginx/ssl/yourdomain.com/*.pem
+     sudo chown root:root /etc/nginx/ssl/yourdomain.com/*.pem
+     ```
+
+#### Nginx SSL Configuration
+
+Create or update your Nginx configuration at `/etc/nginx/sites-available/yourdomain.com`:
+
 ```nginx
+# HTTP to HTTPS redirect
 server {
-    listen 443 ssl;
-    server_name your-domain.com;
+    listen 80;
+    listen [::]:80;
+    server_name yourdomain.com www.yourdomain.com;
+    
+    # ACME challenge for Let's Encrypt
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type text/plain;
+    }
+    
+    # Redirect all other HTTP to HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
 
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+# HTTPS server
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name yourdomain.com www.yourdomain.com;
+    
+    # SSL certificate paths
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
     
     # SSL configuration
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:50m;
+    ssl_session_tickets off;
+    
+    # Modern configuration
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
+    
+    # HSTS (uncomment after testing)
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    
+    # OCSP Stapling
     ssl_stapling on;
     ssl_stapling_verify on;
-    add_header Strict-Transport-Security "max-age=31536000" always;
-
-    # ... rest of your nginx configuration
+    ssl_trusted_certificate /etc/letsencrypt/live/yourdomain.com/chain.pem;
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    
+    # Your application configuration
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+    
+    # API proxy
+    location /api/ {
+        proxy_pass http://localhost:5000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
 ```
 
-### 3. Production Docker Compose
+4. **Test and Reload Nginx**:
+   ```bash
+   # Test Nginx configuration
+   sudo nginx -t
+   
+   # Reload Nginx to apply changes
+   sudo systemctl reload nginx
+   ```
 
-Create a `docker-compose.prod.yml`:
+5. **Verify SSL Configuration**:
+   - Test your SSL configuration using [SSL Labs](https://www.ssllabs.com/ssltest/)
+   - Ensure you get an A+ rating
+   - Check for mixed content issues
+
+### 3. Docker Compose for Production
+
+Create a `docker-compose.prod.yml` file in your project root with the following configuration:
 
 ```yaml
 version: '3.8'
 
+# Define secrets (these should be stored in Docker Swarm or Kubernetes secrets in production)
+# secrets:
+#   mongodb_root_password:
+#     file: ./secrets/mongodb_root_password.txt
+#   jwt_secret:
+#     file: ./secrets/jwt_secret.txt
+
 services:
+  # MongoDB Service
   mongodb:
-    image: mongo:latest
-    restart: always
+    image: mongo:6.0
+    container_name: mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD:-changeme}
+      MONGO_INITDB_DATABASE: ai_delivers_food
     volumes:
       - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "'db.runCommand({ ping: 1 })'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+      args:
+        NODE_ENV: production
+    container_name: backend
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USERNAME}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD}
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=${MONGODB_URI:-mongodb://${MONGODB_USERNAME:-admin}:${MONGODB_PASSWORD:-changeme}@mongodb:27017/ai_delivers_food?authSource=admin}
+      - JWT_SECRET=${JWT_SECRET:-your_jwt_secret}
+      - JWT_EXPIRES_IN=24h
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - RESTAURANT_ADDRESS=${RESTAURANT_ADDRESS}
+      - LOG_LEVEL=info
+    ports:
+      - "5000:5000"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NODE_ENV: production
+    container_name: frontend
+    restart: unless-stopped
+    environment:
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:5000}
+      - REACT_APP_GOOGLE_MAPS_API_KEY=${REACT_APP_GOOGLE_MAPS_API_KEY}
+      - NODE_ENV=production
+    ports:
+      - "3000:80"
+    networks:
+      - app-network
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Nginx Reverse Proxy (optional, if not using host Nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      - backend
+      - frontend
     networks:
       - app-network
     deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+# Networks
+networks:
+  app-network:
+    driver: bridge
+    # For production, consider using an overlay network in Swarm mode
+    # driver: overlay
+    # attachable: true
+
+# Volumes
+volumes:
+  mongodb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/mongodb
+  
+  # For production, consider using named volumes with proper backup solutions
+  # mongodb_data:
+  #   driver: local
+  #   driver_opts:
+  #     type: nfs
+  #     o: addr=nfs-server.local,rw
+  #     device: ":/exports/mongodb"
+
+  # For development only (node_modules)
+  node_modules:
+  .next:
+  build:
+
+# Healthcheck configuration for all services
+# This ensures containers restart if they become unhealthy
+x-healthcheck: &healthcheck
+  healthcheck:
+    test: ["CMD-SHELL", "exit 0"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 5s
+```
+
+### Key Configuration Notes:
+
+1. **Secrets Management**:
+   - Never store secrets in version control
+   - Use Docker secrets or environment variables from a secure source
+   - Consider using a secrets management service in production
+
+2. **Resource Limits**:
+   - Set appropriate CPU and memory limits
+   - Adjust based on your server capacity and expected load
+
+3. **Networking**:
+   - Uses a dedicated bridge network for container communication
+   - For production clusters, consider using overlay networks
+
+4. **Storage**:
+   - Uses named volumes for persistent data
+   - For production, consider using NFS or cloud storage solutions
+
+5. **Health Checks**:
+   - All services include health checks
+   - Containers will automatically restart if they become unhealthy
+
+6. **Security**:
+   - Runs services as non-root users
+   - Uses read-only filesystems where possible
+   - Limits container capabilities
+
+### Deployment Commands:
+
+1. **Build and Start Services**:
+   ```bash
+   # Pull latest images (if needed)
+   docker-compose -f docker-compose.prod.yml pull
+   
+   # Build and start services
+   docker-compose -f docker-compose.prod.yml up -d --build
+   ```
+
+2. **View Logs**:
+   ```bash
+   # View all logs
+   docker-compose -f docker-compose.prod.yml logs -f
+   
+   # View logs for a specific service
+   docker-compose -f docker-compose.prod.yml logs -f backend
+   ```
+
+3. **Monitor Containers**:
+   ```bash
+   # Show running containers
+   docker-compose -f docker-compose.prod.yml ps
+   
+   # Show resource usage
+   docker stats
+   ```
+
+4. **Maintenance Commands**:
+   ```bash
+   # Stop services
+   docker-compose -f docker-compose.prod.yml down
+   
+   # Rebuild a specific service
+   docker-compose -f docker-compose.prod.yml up -d --build <service_name>
+   
+   # Run a command in a running container
+   docker-compose -f docker-compose.prod.yml exec backend npm run migrate
+   ```
+
+5. **Backup and Restore**:
+   ```bash
+   # Backup MongoDB
+   docker-compose -f docker-compose.prod.yml exec -T mongodb mongodump --archive --gzip > backup-$(date +%Y%m%d).gz
+   
+   # Restore MongoDB
+   cat backup-20230101.gz | docker-compose -f docker-compose.prod.yml exec -T mongodb mongorestore --archive --gzip
+   ```
       resources:
         limits:
           cpus: '1'
@@ -121,92 +512,59 @@ services:
     networks:
       - app-network
     deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    restart: always
-    depends_on:
-      - backend
-    networks:
-      - app-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-networks:
-  app-network:
-    driver: bridge
-
-volumes:
-  mongodb_data:
 ```
 
-## Deployment Steps
+## 4. Monitoring and Maintenance
 
-1. **Server Setup**:
-```bash
-# Update system
-sudo apt-get update && sudo apt-get upgrade -y
+### Application Monitoring
 
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
+1. **Prometheus and Grafana**:
+   - Prometheus is configured to scrape metrics from the backend service
+   - Grafana provides dashboards for visualizing metrics and setting up alerts
+   - Access Grafana at `http://yourdomain.com:3000` (default credentials: admin/admin)
 
-# Install Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-```
+2. **Log Management**:
+   ```bash
+   # View logs for all services
+   docker-compose -f docker-compose.prod.yml logs -f
+   
+   # View logs for a specific service
+   docker-compose -f docker-compose.prod.yml logs -f backend
+   ```
 
-2. **Application Deployment**:
-```bash
-# Clone repository
-git clone https://github.com/yourusername/ai-delivers-food.git
-cd ai-delivers-food
+### Database Backups
 
-# Set up environment variables
-cp .env.example .env
-# Edit .env with production values
+1. **Scheduled MongoDB Backups**:
+   ```bash
+   # Create a backup script at /usr/local/bin/backup-mongodb.sh
+   #!/bin/bash
+   
+   BACKUP_DIR="/backups/mongodb"
+   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+   
+   mkdir -p $BACKUP_DIR
+   
+   docker-compose -f /path/to/docker-compose.prod.yml exec -T mongodb mongodump \
+     --archive --gzip \
+     --uri="$MONGODB_URI" \
+     --out=- > "$BACKUP_DIR/backup_$TIMESTAMP.gz"
+   
+   # Keep only the last 7 days of backups
+   find "$BACKUP_DIR" -name "backup_*.gz" -mtime +7 -delete
+   ```
 
-# Build and start services
-docker-compose -f docker-compose.prod.yml up -d --build
-```
+2. **Schedule Daily Backups**:
+   ```bash
+   # Make the script executable
+   chmod +x /usr/local/bin/backup-mongodb.sh
+   
+   # Add to crontab
+   (crontab -l 2>/dev/null; echo "0 2 * * * /usr/local/bin/backup-mongodb.sh") | crontab -
+   ```
 
-3. **Monitoring Setup**:
-```bash
-# Install monitoring tools
-docker run -d \
-  --name=prometheus \
-  -p 9090:9090 \
-  -v /path/to/prometheus.yml:/etc/prometheus/prometheus.yml \
-  prom/prometheus
+## 5. CI/CD Pipeline
 
-docker run -d \
-  --name=grafana \
-  -p 3000:3000 \
-  grafana/grafana
-```
-
-## CI/CD Pipeline Setup
-
-### 1. GitHub Actions Workflow
+### GitHub Actions Workflow
 
 Create `.github/workflows/main.yml`:
 
@@ -317,285 +675,243 @@ jobs:
           docker-compose -f docker-compose.prod.yml up -d
 ```
 
-### 2. Required Secrets
+## 6. Security Best Practices
 
-Add the following secrets to your GitHub repository:
+### Infrastructure Security
 
-- `DOCKERHUB_USERNAME`: Your DockerHub username
-- `DOCKERHUB_TOKEN`: Your DockerHub access token
-- `SERVER_HOST`: Production server hostname/IP
-- `SERVER_USERNAME`: SSH username for production server
-- `SERVER_SSH_KEY`: SSH private key for production server
+1. **Network Security**:
+   - Use VPCs and security groups to restrict access
+   - Implement network segmentation
+   - Use private subnets for database instances
+   - Enable VPC flow logs for monitoring
 
-### 3. Environment Variables
+2. **Docker Security**:
+   - Run containers as non-root users
+   - Use read-only filesystems where possible
+   - Limit container capabilities
+   - Enable user namespace remapping
+   - Regularly update container images
 
-Create `.env.example` files for both backend and frontend:
+3. **Secrets Management**:
+   - Never commit secrets to version control
+   - Use Docker secrets or environment variables from secure sources
+   - Rotate credentials and API keys regularly
+   - Use a secrets management service in production
 
-```env
-# Backend .env.example
-NODE_ENV=development
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/ai_delivers_food
-JWT_SECRET=your_jwt_secret
-GOOGLE_MAPS_API_KEY=your_google_maps_api_key
-RESTAURANT_ADDRESS=your_restaurant_address
-CLIENT_URL=http://localhost:3000
+### Application Security
 
-# Frontend .env.example
-REACT_APP_API_URL=http://localhost:5000
-REACT_APP_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
-```
+1. **Dependencies**:
+   - Regularly update all dependencies
+   - Use Dependabot or similar tools for automated updates
+   - Regularly audit for vulnerabilities
+   - Pin dependency versions in package.json
 
-### 4. Docker Compose for CI/CD
+2. **API Security**:
+   - Implement rate limiting
+   - Use API keys or OAuth2 for authentication
+   - Validate all input data
+   - Sanitize output to prevent XSS
+   - Use HTTPS for all API calls
 
-Create `docker-compose.ci.yml`:
+## 7. Performance Optimization
 
-```yaml
-version: '3.8'
+### Frontend Optimization
 
-services:
-  mongodb:
-    image: mongo:latest
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=test
-      - MONGO_INITDB_ROOT_PASSWORD=test
-    ports:
-      - "27017:27017"
+1. **Code Splitting**:
+   - Split code by routes
+   - Lazy load components
+   - Use React.lazy and Suspense
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      - NODE_ENV=test
-      - MONGODB_URI=mongodb://test:test@mongodb:27017/test?authSource=admin
-      - JWT_SECRET=test_secret
-      - GOOGLE_MAPS_API_KEY=test_key
-      - RESTAURANT_ADDRESS=test_address
-      - CLIENT_URL=http://localhost:3000
-    depends_on:
-      - mongodb
-    command: npm test
+2. **Caching**:
+   - Implement service workers
+   - Use CDN for static assets
+   - Set proper cache headers
+   - Enable browser caching
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    environment:
-      - REACT_APP_API_URL=http://localhost:5000
-      - REACT_APP_GOOGLE_MAPS_API_KEY=test_key
-    command: npm test
-```
+3. **Bundle Optimization**:
+   - Minify and compress assets
+   - Use tree-shaking
+   - Optimize images
+   - Use modern JavaScript features
 
-### 5. Pipeline Stages
+### Backend Optimization
 
-The CI/CD pipeline consists of the following stages:
+1. **Database**:
+   - Create appropriate indexes
+   - Optimize queries
+   - Use connection pooling
+   - Implement caching with Redis
 
-1. **Test Stage**:
-   - Runs on every push and pull request
-   - Sets up MongoDB service container
-   - Installs dependencies
-   - Runs backend and frontend tests
-   - Ensures code quality
+2. **Node.js**:
+   - Use clustering for multi-core CPUs
+   - Implement request validation
+   - Use streaming for large responses
+   - Implement rate limiting
 
-2. **Build Stage**:
-   - Runs only on main branch after successful tests
-   - Builds Docker images for backend and frontend
-   - Pushes images to DockerHub
-   - Tags images with latest version
+## 8. Scaling
 
-3. **Deploy Stage**:
-   - Runs only on main branch after successful build
-   - Connects to production server via SSH
-   - Pulls latest Docker images
-   - Updates running containers
-   - Ensures zero-downtime deployment
+### Horizontal Scaling
 
-### 6. Monitoring the Pipeline
+1. **Backend API**:
+   - Add more backend instances
+   - Use a load balancer (Nginx, HAProxy, or cloud LB)
+   - Implement sticky sessions if needed
+   - Use connection pooling
 
-1. **GitHub Actions Dashboard**:
-   - View pipeline status at `https://github.com/yourusername/ai-delivers-food/actions`
-   - Monitor test results and deployment status
-   - View logs for each stage
+2. **Database**:
+   - Set up MongoDB replica set
+   - Consider sharding for very large datasets
+   - Use read replicas for read-heavy workloads
+   - Implement proper indexing
 
-2. **Notifications**:
-   - Set up Slack notifications for pipeline events
-   - Configure email notifications for failed deployments
-   - Monitor deployment status in real-time
+### Vertical Scaling
 
-### 7. Rollback Procedure
+1. **Server Resources**:
+   - Increase CPU and memory
+   - Use faster storage (SSD/NVMe)
+   - Optimize database queries
+   - Increase file descriptor limits
 
-In case of deployment issues:
-
-```bash
-# SSH into production server
-ssh user@your-server
-
-# Rollback to previous version
-cd /path/to/app
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml up -d --no-recreate
-
-# Or rollback to specific version
-docker-compose -f docker-compose.prod.yml up -d --no-recreate backend=yourusername/ai-delivers-food-backend:v1.0.0
-```
-
-## Maintenance
+## 9. Backup and Disaster Recovery
 
 ### Backup Strategy
 
 1. **Database Backups**:
-```bash
-# Create backup script
-cat > backup.sh << 'EOF'
-#!/bin/bash
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="/path/to/backups"
+   - Regular automated backups
+   - Test restoration process
+   - Store backups in multiple locations
+   - Encrypt sensitive backup data
 
-# Backup MongoDB
-docker exec mongodb mongodump --out /backup
-docker cp mongodb:/backup $BACKUP_DIR/mongodb_$TIMESTAMP
+2. **Application Data**:
+   - Backup configuration files
+   - Backup uploaded files and media
+   - Test restoration process
+   - Document recovery procedures
 
-# Compress backup
-tar -czf $BACKUP_DIR/mongodb_$TIMESTAMP.tar.gz $BACKUP_DIR/mongodb_$TIMESTAMP
+### Disaster Recovery Plan
 
-# Remove uncompressed backup
-rm -rf $BACKUP_DIR/mongodb_$TIMESTAMP
+1. **Recovery Time Objective (RTO)**:
+   - Define acceptable downtime
+   - Document recovery procedures
+   - Train team members
+   - Test recovery process
 
-# Keep only last 7 days of backups
-find $BACKUP_DIR -name "mongodb_*.tar.gz" -mtime +7 -delete
-EOF
+2. **Recovery Point Objective (RPO)**:
+   - Define acceptable data loss
+   - Set backup frequency accordingly
+   - Monitor backup success
+   - Test data restoration
 
-# Make script executable
-chmod +x backup.sh
+## 10. Maintenance and Updates
 
-# Add to crontab
-(crontab -l 2>/dev/null; echo "0 0 * * * /path/to/backup.sh") | crontab -
-```
+### Regular Maintenance
 
-### Monitoring
+1. **System Updates**:
+   - Keep OS updated
+   - Update Docker and dependencies
+   - Monitor security advisories
+   - Schedule maintenance windows
 
-1. **Set up alerts**:
-   - Configure Grafana alerts for:
-     - High CPU usage (>80%)
-     - High memory usage (>80%)
-     - Service down
-     - High response time (>1s)
+2. **Database Maintenance**:
+   - Regular index optimization
+   - Monitor query performance
+   - Clean up old data
+   - Regular backups
 
-2. **Log Management**:
-```bash
-# Set up log rotation
-cat > /etc/logrotate.d/ai-delivers-food << 'EOF'
-/var/log/ai-delivers-food/*.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 root root
-}
-EOF
-```
+### Monitoring and Alerts
 
-### Scaling
+1. **Infrastructure Monitoring**:
+   - CPU, memory, disk usage
+   - Network traffic
+   - Container health
+   - Log aggregation
 
-1. **Horizontal Scaling**:
-```bash
-# Scale backend service
-docker-compose -f docker-compose.prod.yml up -d --scale backend=3
-```
+2. **Application Monitoring**:
+   - Error tracking
+   - Performance metrics
+   - User experience
+   - Business metrics
 
-2. **Load Balancer Configuration**:
-```nginx
-upstream backend_servers {
-    server backend:5000;
-    server backend:5001;
-    server backend:5002;
-}
-
-server {
-    # ... SSL configuration ...
-
-    location /api {
-        proxy_pass http://backend_servers;
-        # ... other proxy settings ...
-    }
-}
-```
-
-## Security Checklist
-
-- [ ] All services are running in production mode
-- [ ] SSL/TLS is properly configured
-- [ ] Environment variables are properly set
-- [ ] Database credentials are secure
-- [ ] JWT secret is strong and unique
-- [ ] Regular security updates are applied
-- [ ] Firewall is configured
-- [ ] Rate limiting is enabled
-- [ ] CORS is properly configured
-- [ ] Regular backups are scheduled
-- [ ] Monitoring and alerting are set up
-- [ ] Log rotation is configured
-- [ ] Access logs are being monitored
-- [ ] Security headers are properly set
-- [ ] Dependencies are up to date
-
-## Troubleshooting
+## 11. Troubleshooting
 
 ### Common Issues
 
-1. **Service Not Starting**:
-```bash
-# Check logs
-docker-compose -f docker-compose.prod.yml logs
+1. **Container Issues**:
+   - Check container logs
+   - Verify environment variables
+   - Check resource limits
+   - Verify network connectivity
 
-# Check service status
-docker-compose -f docker-compose.prod.yml ps
-```
+2. **Database Issues**:
+   - Check MongoDB logs
+   - Verify connection strings
+   - Check disk space
+   - Monitor slow queries
 
-2. **Database Connection Issues**:
-```bash
-# Check MongoDB logs
-docker-compose -f docker-compose.prod.yml logs mongodb
+3. **Network Issues**:
+   - Check firewall rules
+   - Verify DNS resolution
+   - Check SSL certificates
+   - Test connectivity
 
-# Test connection
-docker exec -it mongodb mongo --eval "db.serverStatus()"
-```
+### Getting Help
 
-3. **High Resource Usage**:
-```bash
-# Check container stats
-docker stats
+1. **Documentation**:
+   - Check project documentation
+   - Review API documentation
+   - Check changelogs
 
-# Check system resources
-htop
-```
+2. **Community Support**:
+   - GitHub issues
+   - Stack Overflow
+   - Official documentation
+   - Community forums
 
-### Recovery Procedures
+## Conclusion
 
-1. **Service Recovery**:
-```bash
-# Restart specific service
-docker-compose -f docker-compose.prod.yml restart backend
+This guide has provided a comprehensive overview of deploying and maintaining the AI Delivers Food application in production. By following these best practices, you can ensure a secure, performant, and reliable deployment.
 
-# Restart all services
-docker-compose -f docker-compose.prod.yml restart
-```
+### Key Takeaways
 
-2. **Database Recovery**:
-```bash
-# Restore from backup
-docker exec -i mongodb mongorestore --archive < backup_file
-```
+1. **Infrastructure as Code**:
+   - All infrastructure is defined in Docker Compose files
+   - Environment variables are used for configuration
+   - Secrets are managed securely
 
-## Support
+2. **Security First**:
+   - All services run with least privilege
+   - Network traffic is encrypted
+   - Regular security updates are applied
 
-For production support:
-1. Check the logs: `docker-compose -f docker-compose.prod.yml logs`
-2. Review monitoring dashboards
-3. Check system resources
-4. Contact the development team
+3. **Monitoring and Maintenance**:
+   - Comprehensive monitoring with Prometheus and Grafana
+   - Regular backups and disaster recovery procedures
+   - Performance optimization and scaling strategies
 
-Remember to keep this guide updated as the application evolves. 
+### Next Steps
+
+1. **Testing**:
+   - Test the deployment in a staging environment
+   - Perform load testing
+   - Verify all security measures
+
+2. **Documentation**:
+   - Document any environment-specific configurations
+   - Create runbooks for common operations
+   - Document escalation procedures
+
+3. **Training**:
+   - Train team members on deployment procedures
+   - Conduct incident response drills
+   - Review security best practices
+
+### Getting Help
+
+For any questions or issues, please refer to:
+
+1. **Project Documentation**: Check the project's README and documentation
+2. **GitHub Issues**: Open an issue for bugs or feature requests
+3. **Community Support**: Reach out on community forums or Stack Overflow
+4. **Professional Support**: Contact the maintainers for enterprise support options
+
+Thank you for using AI Delivers Food! We appreciate your feedback and contributions to make the project better.
