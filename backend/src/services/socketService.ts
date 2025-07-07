@@ -1,53 +1,185 @@
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
+import { Server as HttpServer } from 'http';
+import { AddressInfo } from 'net';
 import { ITrackingInfo, IOrderStatus } from '../interfaces/tracking';
+import { logger } from '../utils/logger';
 
 class SocketService {
   private io: Server | null = null;
   private listeners: Map<string, (data: ITrackingInfo) => void> = new Map();
+  private connectedClients: Map<string, Socket> = new Map();
+  private isInitialized: boolean = false;
 
-  initialize(server: any): void {
+  /**
+   * Initialize the Socket.IO server
+   * @param server HTTP server instance
+   */
+  initialize(server: HttpServer): void {
+    if (this.isInitialized) {
+      logger.warn('SocketService is already initialized');
+      return;
+    }
+
     try {
       this.io = new Server(server, {
         cors: {
-          origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-          methods: ['GET', 'POST']
-        }
+          origin: process.env.NODE_ENV === 'production'
+            ? process.env.FRONTEND_URL
+            : 'http://localhost:3000',
+          methods: ['GET', 'POST'],
+          credentials: true
+        },
+        path: '/socket.io',
+        serveClient: false,
+        pingInterval: 10000,
+        pingTimeout: 5000,
+        cookie: false,
       });
 
-      this.io.on('connection', (socket) => {
-        console.log('Client connected:', socket.id);
+      // Handle new connections
+      this.io.on('connection', (socket: Socket) => {
+        const clientId = socket.id;
+        this.connectedClients.set(clientId, socket);
+        
+        logger.info(`Client connected: ${clientId}`, {
+          clientId,
+          handshake: socket.handshake,
+          connectedClients: this.connectedClients.size,
+        });
 
-        socket.on('disconnect', () => {
-          console.log('Client disconnected:', socket.id);
+        // Handle disconnection
+        socket.on('disconnect', (reason: string) => {
+          this.connectedClients.delete(clientId);
+          logger.info(`Client disconnected: ${clientId}`, {
+            reason,
+            connectedClients: this.connectedClients.size,
+          });
+        });
+
+        // Handle errors
+        socket.on('error', (error: Error) => {
+          logger.error(`Socket error (${clientId}):`, error);
         });
       });
+
+      // Handle server errors
+      this.io.engine.on('connection_error', (error: Error) => {
+        logger.error('Socket connection error:', error);
+      });
+
+      this.isInitialized = true;
+      logger.info('SocketService initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize socket service:', error);
-      throw new Error('Socket service initialization failed');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to initialize SocketService:', error);
+      throw new Error(`Socket service initialization failed: ${errorMessage}`);
     }
   }
 
+  /**
+   * Emit tracking update to all connected clients
+   * @param orderId Order ID
+   * @param trackingInfo Tracking information
+   */
   emitTrackingUpdate(orderId: string, trackingInfo: ITrackingInfo): void {
+    if (!this.io || !this.isInitialized) {
+      throw new Error('Socket service not initialized');
+    }
+
     try {
-      if (!this.io) {
-        throw new Error('Socket service not initialized');
-      }
-      this.io.emit(`tracking:${orderId}`, trackingInfo);
+      const eventName = `tracking:${orderId}`;
+      this.io.emit(eventName, trackingInfo);
+      
+      logger.debug(`Emitted tracking update for order ${orderId}`, {
+        orderId,
+        event: eventName,
+        trackingInfo,
+        recipientCount: this.connectedClients.size,
+      });
     } catch (error) {
-      console.error('Failed to emit tracking update:', error);
-      throw new Error('Failed to emit tracking update');
+      logger.error(`Failed to emit tracking update for order ${orderId}:`, error);
+      throw new Error(`Failed to emit tracking update: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
+  /**
+   * Emit order status update to all connected clients
+   * @param orderId Order ID
+   * @param status New order status
+   */
   emitOrderStatusUpdate(orderId: string, status: IOrderStatus): void {
+    if (!this.io || !this.isInitialized) {
+      throw new Error('Socket service not initialized');
+    }
+
     try {
-      if (!this.io) {
-        throw new Error('Socket service not initialized');
-      }
-      this.io.emit(`order:${orderId}`, status);
+      const eventName = `order:${orderId}:status`;
+      this.io.emit(eventName, { orderId, status, timestamp: new Date() });
+      
+      logger.debug(`Emitted status update for order ${orderId}`, {
+        orderId,
+        status,
+        event: eventName,
+        recipientCount: this.connectedClients.size,
+      });
     } catch (error) {
-      console.error('Failed to emit order status update:', error);
-      throw new Error('Failed to emit order status update');
+      logger.error(`Failed to emit status update for order ${orderId}:`, error);
+      throw new Error(`Failed to emit order status update: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get the number of connected clients
+   */
+  getConnectedClientsCount(): number {
+    return this.connectedClients.size;
+  }
+
+  /**
+   * Gracefully shut down the socket server
+   */
+  async shutdown(): Promise<void> {
+    if (!this.io || !this.isInitialized) {
+      logger.warn('SocketService is not initialized, nothing to shut down');
+      return;
+    }
+
+    try {
+      logger.info('Shutting down SocketService...', {
+        connectedClients: this.connectedClients.size,
+      });
+
+      // Disconnect all clients
+      this.io.sockets.sockets.forEach((socket: Socket) => {
+        socket.disconnect(true);
+      });
+
+      // Close the server
+      await new Promise<void>((resolve, reject) => {
+        if (!this.io) {
+          resolve();
+          return;
+        }
+
+        this.io.close((error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      // Clear collections
+      this.connectedClients.clear();
+      this.listeners.clear();
+      this.isInitialized = false;
+      this.io = null;
+
+      logger.info('SocketService shut down successfully');
+    } catch (error) {
+      logger.error('Error during SocketService shutdown:', error);
+      throw new Error(`Failed to shut down socket service: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -83,4 +215,7 @@ class SocketService {
   }
 }
 
-export default new SocketService(); 
+// Create a singleton instance
+export const socketService = new SocketService();
+
+export default socketService; 

@@ -286,7 +286,7 @@ jobs:
         npm run build
     
     - name: Deploy to Vercel (Backend)
-      uses: vercel/github-action@v1
+      uses: vercel/github-action@v6
       with:
         github-token: ${{ github.token }}
         vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -327,7 +327,7 @@ jobs:
         REACT_APP_GOOGLE_MAPS_API_KEY: ${{ secrets.REACT_APP_GOOGLE_MAPS_API_KEY }}
     
     - name: Deploy to Vercel (Frontend)
-      uses: vercel/github-action@v1
+      uses: vercel/github-action@v6
       with:
         github-token: ${{ github.token }}
         vercel-token: ${{ secrets.VERCEL_TOKEN }}
